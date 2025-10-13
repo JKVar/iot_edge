@@ -16,6 +16,7 @@ LiquidCrystal_I2C lcd(0x27,20,4);  // set the LCD address to 0x27 for a 16 chars
 
 DHT dht(DHTPIN, DHTTYPE);
 RTClib myRTC;
+DS3231 rtc;
 
 bool missingDHT = false;
 
@@ -82,6 +83,7 @@ void checkSensors() {
 
 void setup() {
   pinMode(A0,INPUT_PULLUP);
+  // gomb allapotanak elmentese
   buttonOldState = digitalRead(A0);
   buttonState = buttonOldState;
 
@@ -92,7 +94,16 @@ void setup() {
   dht.begin();
   lcd.init();
   lcd.backlight();
+
+  // ido beallitasa
+  rtc.setYear(25);
+  rtc.setMonth(10);
+  rtc.setDoW(3);
+  rtc.setHour(21);
+  rtc.setMinute(56);
+
  
+  // custom karakterek letrehozasa
   lcd.createChar(0, nightChar);
   lcd.createChar(1, dayChar);
   lcd.createChar(2, upChar);
@@ -124,15 +135,15 @@ void printDayOrNight(uint8_t hour, uint8_t minute) {
   lcd.print(" ");
 
   if (hour >= 6 && hour <=22) {
-    lcd.printByte(1);
+    lcd.printByte(1); // nappal karaktere
   } else {
-    lcd.printByte(0);
+    lcd.printByte(0); // ejszaka karaketre
   }
 }
 
 void loop() {
   // Wait a few seconds between measurements.
-  delay(2000);
+  delay(500);
   DateTime now = myRTC.now();
   uint16_t year = now.year();
   uint8_t month = now.month();
