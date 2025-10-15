@@ -319,7 +319,7 @@ void loop() {
   DateTime now = !missingRTC ? rtc.now() : DateTime(2000, 1, 1, 0, 0, 0);
   delay(50);
 
-  if (missingTSL) {
+  if (!missingTSL) {
     sensors_event_t event;
     tsl.getEvent(&event);
     delay(50);
