@@ -1,9 +1,9 @@
 #include "DHT.h"
+#include "RTClib.h"
 #include <LiquidCrystal_I2C.h>
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_TSL2561_U.h>
-#include <DS3231.h>
 #define DHTPIN A3     // Digital pin connected to the DHT sensor
 
 #define DHTTYPE DHT11   // DHT 11
@@ -18,8 +18,7 @@ LiquidCrystal_I2C lcd(0x27,20,4);  // set the LCD address to 0x27 for a 16 chars
 Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
 
 DHT dht(DHTPIN, DHTTYPE);
-RTClib myRTC;
-DS3231 rtc;
+RTC_DS3231 rtc;
 
 bool missingDHT = false;
 
@@ -82,7 +81,7 @@ int buttonOldState, buttonState;
 
 bool isManual; // false - automatic, true - manual
 int lastButtonChangeTimestamp = 0;
-const int automaticManualChangeDelay = 300; // in seconds
+const int automaticManualChangeDelay = 10; // in seconds
 bool isItDay; // false - it's night (who would have guessed), true - it's day
 bool isShutterUp = true;
 
@@ -91,17 +90,31 @@ const float normalLightThreshold = 100;
 const float tooBrightThreshold = 1000;
 bool isLightSensorDetected = true;
 
+bool isEngineOn = false;
+
 void checkSensors() {
   
 }
 
-short assessLuminosity(float light) {
+void assessLuminosity(float light) {
   if (light < normalLightThreshold) {
     luminosity = 2;
   } else if (light < tooBrightThreshold) {
     luminosity = 1;
   } else {
     luminosity = 0;
+  }
+}
+
+void assessButtonState(DateTime currentDate) {
+  buttonState = digitalRead(A0);
+
+  if (buttonState != buttonOldState) {
+    buttonOldState = buttonState;
+    changeShutters(!isShutterUp);
+
+    lastButtonChangeTimestamp = currentDate.unixtime();
+    isManual = true;
   }
 }
 
@@ -167,8 +180,12 @@ void setup() {
 
   configureLightSensor();
   dht.begin();
+
   lcd.init();
   lcd.backlight();
+
+  rtc.begin();
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 
   // ido beallitasa
   /* rtc.setYear(25);
@@ -186,7 +203,7 @@ void setup() {
   lcd.createChar(4, gradeChar);
   lcd.home();
 
-  lcd.print("So it begins");
+  lcd.print(F("So it begins"));
  }
 
 void printWithZero(uint8_t number) {
@@ -217,32 +234,68 @@ void printDayOrNight(uint8_t hour, uint8_t minute) {
 }
 
 void printLuminosity() {
-  lcd.print("Light: ");
+  lcd.print(F("Light: "));
 
   if (luminosity <= 0) {
-    lcd.print("Bright");
+    lcd.print(F("Bright"));
   } else if (luminosity == 1) {
-    lcd.print("Okay");
+    lcd.print(F("Okay"));
   } else {
-    lcd.print("Dark");
+    lcd.print(F("Dark"));
+  }
+}
+
+void printMode() {
+  lcd.print(F("Mode: "));
+
+  if (isManual) {
+    lcd.print(F("Manual"));
+  } else {
+    lcd.print(F("Automatic"));
+  }
+}
+
+void printShutterState() {
+  lcd.print(F("Shutter "));
+
+  if (isShutterUp) {
+    lcd.printByte(2);
+  } else {
+    lcd.printByte(3);
+  }
+}
+
+void printEngineState() {
+  lcd.print(F("Engine: "));
+
+  if (isEngineOn) {
+    lcd.print(F("On"));
+  } else {
+    lcd.print(F("Off"));
   }
 }
 
 void loop() {
   // Wait a few seconds between measurements.
   delay(2000);
-  DateTime now = myRTC.now();
+  DateTime now = rtc.now();
+  delay(50);
   uint16_t year = now.year();
   uint8_t month = now.month();
   uint8_t day = now.day();
   uint8_t hour = now.hour();
   uint8_t minute = now.minute();
 
-  checkDayTime(hour);
-  automaticModeLogic(now);
-
   sensors_event_t event;
   tsl.getEvent(&event);
+  delay(50);
+
+  if(event.light) {
+    assessLuminosity(event.light);
+  }
+  checkDayTime(hour);
+  automaticModeLogic(now);
+  assessButtonState(now);
 
   // Reading temperature or humidity takes about 250 milliseconds!
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
@@ -251,7 +304,7 @@ void loop() {
   float t = dht.readTemperature();
   // Read temperature as Fahrenheit (isFahrenheit = true)
   float f = dht.readTemperature(true);
-
+  
   // Check if any reads failed and exit early (to try again).
   if (isnan(h) || isnan(t) || isnan(f)) {
     Serial.println(F("Failed to read from DHT sensor!"));
@@ -260,18 +313,6 @@ void loop() {
     lcd.print(F("Failed to read from DHT sensor!"));
     return;
   }
-
-  // Serial.print(F("Humidity: "));
-  // Serial.print(h);
-  // Serial.print(F("%  Temperature: "));
-  // Serial.print(t);
-  // Serial.print(F("°C "));
-  // Serial.print(f);
-  // Serial.print(F("°F  Heat index: "));
-  // Serial.print(hic);
-  // Serial.print(F("°C "));
-  // Serial.print(hif);
-  // Serial.println(F("°F"));
 
   lcd.flush();
   lcd.clear();
@@ -285,24 +326,36 @@ void loop() {
   lcd.print(t);
   lcd.printByte(4);
   lcd.print(F("C "));
-  
+
   lcd.setCursor(0, 2);
+  printMode();
+
+  lcd.setCursor(0, 3);
   if (event.light) {
     printLuminosity();
   } else {
-    lcd.print("Sensor overload.");
+    lcd.print(F("Sensor overload."));
   }
 
-  buttonState = digitalRead(A0);
+  delay(2000);
+  lcd.flush();
+  lcd.clear();
 
-  if (buttonState != buttonOldState) {
-    buttonOldState = buttonState;
-    changeShutters(!isShutterUp);
+  printShutterState();
 
-    lastButtonChangeTimestamp = now.unixtime();
-    isManual = true;
-
-    lcd.setCursor(0, 3);
-    lcd.print(F("Switch"));
-  }
+  lcd.setCursor(0, 1);
+  printEngineState();
 }
+
+
+  // Serial.print(F("Humidity: "));
+  // Serial.print(h);
+  // Serial.print(F("%  Temperature: "));
+  // Serial.print(t);
+  // Serial.print(F("°C "));
+  // Serial.print(f);
+  // Serial.print(F("°F  Heat index: "));
+  // Serial.print(hic);
+  // Serial.print(F("°C "));
+  // Serial.print(hif);
+  // Serial.println(F("°F"));
