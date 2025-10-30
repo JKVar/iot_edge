@@ -248,7 +248,7 @@ void configureLCD() {
 void configureRTC() {
   if (rtc.begin()) {
     // Comment this out after first run.
-//     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   } else {
     missingRTC = true;
     Serial.print(F("Failed to start RTC."));
@@ -368,6 +368,7 @@ void printHumidityAndTemperature(float humidity, float temperature) {
 
 void flushScreen() {
   lcd.flush();
+//  lcd.setCursor(0,0);
   lcd.clear();
   delay(50);
 }
