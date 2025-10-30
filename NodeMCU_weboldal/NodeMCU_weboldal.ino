@@ -3,11 +3,12 @@
 
 byte temperature;
 byte humidity;
+byte motorforgas;
 
 SPISettings spi_settings(100000, MSBFIRST, SPI_MODE0);
 
-const char* ssid = "wifi";
-const char* password = "jelszo";
+const char* ssid = "WiFi";
+const char* password = "francesco1.3";
 
 int ledPin = 13;  // GPIO13---D7 of NodeMCU
 WiFiServer server(80);
@@ -107,13 +108,13 @@ void loop() {
   client.println("<!DOCTYPE HTML>");
   client.println("<html>");
 
-  client.print("Temperature: ");
+  client.print("<h2>Temperature: ");
   client.print(temperature);
-  client.println("<br><br>");
+  client.println("</h2>");
 
-  client.print("Humidity: ");
+  client.print("<h2>Humidity: ");
   client.print(humidity);
-  client.println("<br><br>");
+  client.println("</h2>");
 
 
   // client.print("Led is now: ");
