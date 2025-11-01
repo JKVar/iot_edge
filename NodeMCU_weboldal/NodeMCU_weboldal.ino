@@ -22,8 +22,8 @@ bool isDataError = false;
 
 SPISettings spi_settings(100000, MSBFIRST, SPI_MODE0);
 
-const char* ssid = "AndroidAP1571";
-const char* password = "mbqw1601";
+const char* ssid = "-";
+const char* password = "-";
 
 const byte MAX_SPI_RETRIES = 3;
 const int SPI_POLL_INTERVAL = 1500;
