@@ -25,83 +25,6 @@ DHT dht(DHTPIN, DHTTYPE);
 RTC_DS3231 rtc;
 Stepper myStepper(stepsPerRevolution, 8, 6, 5, 4);
 
-byte nightChar[] = {
-  B00011,
-  B10001,
-  B11001,
-  B10101,
-  B10011,
-  B10001,
-  B11000,
-  B00000,
-};
-
-byte dayChar[] = {
-  B11100,
-  B11010,
-  B11001,
-  B11001,
-  B11001,
-  B11001,
-  B11010,
-  B11100,
-};
-
-byte upChar[] = {
-  B00000,
-  B00100,
-  B01110,
-  B10101,
-  B00100,
-  B00100,
-  B00100,
-  B00000,
-};
-
-byte downChar[] = {
-  B00000,
-  B00100,
-  B00100,
-  B00100,
-  B10101,
-  B01110,
-  B00100,
-  B00000,
-};
-
-byte gradeChar[] = {
-  B00111,
-  B00101,
-  B00111,
-  B00000,
-  B00000,
-  B00000,
-  B00000,
-  B00000,
-};
-
-byte automaticChar[] = {
-  B00000,
-  B01110,
-  B10001,
-  B10001,
-  B11111,
-  B10001,
-  B10001,
-  B00000,
-};
-
-byte manualChar[] = {
-  B00000,
-  B11011,
-  B10101,
-  B10101,
-  B10001,
-  B10001,
-  B00000,
-  B00000,
-};
-
 const int automaticManualChangeDelay = 10;
 const int normalLightThreshold = 100;
 const int tooBrightThreshold = 1000;
@@ -138,17 +61,7 @@ bool checkSensors() {
     missingDHT = false;
   }
 
-  // if (tsl.begin()) {
-  //   tsl.enableAutoRange(true);
-  //   tsl.setIntegrationTime(TSL2561_INTEGRATIONTIME_13MS);
-  //   missingTSL = false;
-  // } else {
-  //   missingTSL = true;
-  //   Serial.print(F("Missing TSL sensor"));
-  // }
-
   bool allGood = !(missingDHT || missingTSL);
-
   return allGood;
 }
 
@@ -248,39 +161,23 @@ void configureDHT() {
   }
 }
 
-// void configureLCD() {
-//   lcd.init();
-//   delay(500);
-
-//   lcd.backlight();
-//   lcd.home();
-// }
-
 void configureRTC() {
-  if (rtc.begin()) {
-    // Comment this out after first run.
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  Wire.beginTransmission(0x68);
+  byte error = Wire.endTransmission();
+  if (error == 0) {
+    if (rtc.begin()) {
+      rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    }
   } else {
     missingRTC = true;
     Serial.println(F("Failed to start RTC."));
   }
 }
 
-// void configureCustomChars() {
-//   lcd.createChar(0, nightChar);
-//   lcd.createChar(1, dayChar);
-//   lcd.createChar(2, upChar);
-//   lcd.createChar(3, downChar);
-//   lcd.createChar(4, gradeChar);
-//   lcd.createChar(5, automaticChar);
-//   lcd.createChar(6, manualChar);
-// }
-
-
 void setup(void) {
   //soros port megnyitasa
   Serial.begin(9600);
-  Serial.println("Arduino kod elindult");
+  Serial.println("Arduino started.");
 
   //SPI port megnyitasa
   SPCR |= bit(SPE);  //bekapcsolja az SPIt , slave modban
@@ -290,6 +187,8 @@ void setup(void) {
   SPI.attachInterrupt();  //ha jon az SPIn valami beugrik a fuggvenybe
                           //ISR(SPI_STC_vect) ebbe a fuggvenybe ugrik be
 
+  Serial.println("Slave data initialized.");
+
   //DHT11 adatai
   temperature = 1;
   humidity = 1;
@@ -298,15 +197,19 @@ void setup(void) {
   pinMode(A0, INPUT_PULLUP);
   buttonOldState = digitalRead(A0);
   buttonState = buttonOldState;
-  Wire.begin();
 
+  Wire.begin();
+  
   configureDHT();
-  // configureLCD();
+  Serial.println("DHT initialized.");
   configureRTC();
+  Serial.println("RTC initialized.");
   configureTSL();
+  Serial.println("TSL initialized.");
   myStepper.setSpeed(60);
 
-  // configureCustomChars();
+  Serial.println("Setup ready.");
+  Serial.println();
 }
 
 void printWithZero(uint8_t number) {
@@ -328,12 +231,6 @@ void printDayOrNight(uint8_t hour, uint8_t minute) {
   Serial.print(":");
   printWithZero(minute);
   Serial.print(" ");
-
-  // if (isItDay) {
-  //   lcd.printByte(1);  // nappal karaktere
-  // } else {
-  //   lcd.printByte(0);  // ejszaka karaketre
-  // }
 }
 
 void printLuminosity() {
@@ -357,10 +254,8 @@ void printMode() {
 
   if (isManual) {
     Serial.println(F("Manual"));
-    // Serial.printByte(6);
   } else {
     Serial.println(F("Automatic"));
-    // lcd.printByte(5);
   }
 }
 
@@ -390,7 +285,6 @@ void printHumidityAndTemperature(float humidity, float temperature) {
 }
 
 void printSensorProblems() {
-  // flushScreen();
   Serial.print(F("ERROR"));
   int row = 1;
 
@@ -407,20 +301,6 @@ void printSensorProblems() {
 
 
 void loop() {
-  // int err = SimpleDHTErrSuccess;
-  // if ((err = dht11.read(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
-  //   Serial.print("Read DHT11 failed, err=");
-  //   Serial.println(err);
-  //   delay(1000);
-  //   return;
-  // }
-
-  // Serial.print("Sample OK: ");
-  // Serial.print((int)temperature);
-  // Serial.print(" *C, ");
-  // Serial.print((int)humidity);
-  // Serial.println(" H");
-
   // // DHT11 sampling rate is 1HZ.
   delay(1000);
   DateTime now = !missingRTC ? rtc.now() : DateTime(2000, 1, 1, 0, 0, 0);
@@ -436,11 +316,6 @@ void loop() {
   }
 
   bool allGood = checkSensors();
-  //
-  //  if (!allGood) {
-  //    printSensorProblems();
-  //    return -1;
-  //  }
 
   humidity = !missingDHT ? dht.readHumidity() : 0;
   temperature = !missingDHT ? dht.readTemperature() : 20;
@@ -464,6 +339,7 @@ void loop() {
   printLuminosity();
   printEngineState();
   checkEngineState();
+  Serial.println();
 }
 
 //SPI interrupt routine

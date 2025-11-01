@@ -7,10 +7,14 @@ byte motorforgas;
 
 SPISettings spi_settings(100000, MSBFIRST, SPI_MODE0);
 
-const char* ssid = "WiFi";
-const char* password = "francesco1.3";
+const char* ssid = "-";
+const char* password = "-";
 
-int ledPin = 13;  // GPIO13---D7 of NodeMCU
+const int SPI_POLL_INTERVAL = 2000;
+const int CLIENT_AVAILABILITY_TIMEOUT = 2000;
+unsigned long last_SPI_poll = 0;
+
+int SS_PIN = D8;  // GPIO13---D7 of NodeMCU
 WiFiServer server(80);
 
 void setup() {
@@ -19,8 +23,8 @@ void setup() {
 
   delay(10);
 
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, LOW);  //lekapcsolja a LEDet LOW==0
+  pinMode(SS_PIN, OUTPUT);
+  digitalWrite(SS_PIN, LOW);  //lekapcsolja a LEDet LOW==0
 
   // Connect to WiFi network
   Serial.println();
@@ -48,89 +52,127 @@ void setup() {
   Serial.println("/");
 }
 
-void loop() {
-  // Check if a client has connected
-  WiFiClient client = server.available();
-  if (!client) {
+void executeTransaction() {
+  SPI.beginTransaction(spi_settings);
+  
+  SPI.transfer('t');
+  temperature = SPI.transfer('h');
+  humidity = SPI.transfer(0x00);
+
+  SPI.endTransaction();
+}
+
+void mainPageScripts(WiFiClient &client) {
+  client.println("<script>");
+  client.println("function updateData() {");
+  client.println("  fetch('/data')");
+  client.println("    .then(response => response.json())");
+  client.println("    .then(data => {");
+  client.println("        document.getElementById('temp').textContent = data.temperature;");
+  client.println("        document.getElementById('hum').textContent = data.humidity;");
+  client.println("    })");
+  client.println("    .catch(error => {");
+  client.println("        console.log(\"Failed to fetch data: \");");
+  client.println("        console.log(error);");
+  client.println("        console.log();");
+  client.println("    });");
+  client.println("}");
+  client.println("setInterval(updateData, 2000);");
+  client.println("updateData();");
+  client.println("</script>");
+}
+
+void mainPageBody(WiFiClient &client) {
+  client.println("<body>");
+  client.println("<h1>Temperature & Humidity</h1>");
+  client.println("<p>Temperature: <span id='temp'>--</span>°C</p>");
+  client.println("<p>Humidity: <span id='hum'>--</span>%</p>");
+
+  mainPageScripts(client);
+  client.println("</body>");
+}
+
+void mainPageHead(WiFiClient &client) {
+  client.println("<head>");
+  client.println("<title>Sensor Page</title>");
+  client.println("<meta charset=\"UTF-8\">");
+  client.println("</head>");
+}
+
+void mainPageResponse(WiFiClient &client) {
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/html");
+  client.println();
+  client.println("<!DOCTYPE HTML>");
+  client.println("<html>");
+  mainPageHead(client);
+  mainPageBody(client);
+  client.println("</html>");
+  client.flush();
+  delay(5);
+}
+
+void dataRequestResponse(WiFiClient &client) {
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: application/json");
+  client.println();
+  client.print("{\"temperature\":\"");
+  client.print(temperature);
+  client.print("\",\"humidity\":\"");
+  client.print(humidity);
+  client.println("\"}");
+  client.flush();
+  delay(5);
+}
+
+void webClientResponse(WiFiClient &client, String request) {
+  if (request.indexOf("/data") != -1) {
+    dataRequestResponse(client);
     return;
   }
 
-  // Wait until the client sends some data
-  Serial.println("new client");
-  while (!client.available()) {
-    delay(1);
-  }
+  mainPageResponse(client);
+}
 
-  // Read the first line of the request
+void pollSPI() {
+  if (millis() - last_SPI_poll > SPI_POLL_INTERVAL) {
+    last_SPI_poll = millis();
+    executeTransaction();
+  }
+}
+
+String readClientRequest(WiFiClient &client) {
   String request = client.readStringUntil('\r');
   Serial.println(request);
   client.flush();
+  return request;
+}
 
-  // Match the request
+void handleClient(WiFiClient &client) {
+  Serial.println("New client.");
 
-  int value = LOW;
-  if (request.indexOf("/LED=ON") != -1) {
-    digitalWrite(ledPin, HIGH);
-    value = HIGH;
+  unsigned long timeout_timer = millis();
+  while (!client.available() && millis() - timeout_timer < CLIENT_AVAILABILITY_TIMEOUT) {
+    delay(1);
   }
-  if (request.indexOf("/LED=OFF") != -1) {
-    digitalWrite(ledPin, LOW);
-    value = LOW;
+  if (!client.available()) {
+    Serial.println("Client timed out. Stopping client...");
+    client.stop();
+    return;
   }
 
+  String request = readClientRequest(client);
+  webClientResponse(client, request);
 
-  //SPI kommunikacio ez gyors
-  SPI.beginTransaction(spi_settings);
+  Serial.println("Client disconnected.");
+  Serial.println();
+}
 
-  //trash =
-  SPI.transfer('t');
-  temperature = SPI.transfer('h');
-  humidity = SPI.transfer('.');
+void loop() {
+  pollSPI();
 
-  SPI.endTransaction();
-  delay(1000);
-
-  //soros kommunikacio ez lassu
-  Serial.print("Temperature = ");
-  Serial.println(temperature, DEC);
-  Serial.print("Humidity = ");
-  Serial.println(humidity, DEC);
-
-
-
-  // Set ledPin according to the request
-  //digitalWrite(ledPin, value);
-
-  // Return the response
-  client.println("HTTP/1.1 200 OK");
-  client.println("Content-Type: text/html");
-  client.println("");  //  do not forget this one
-  client.println("<!DOCTYPE HTML>");
-  client.println("<html>");
-
-  client.print("<h2>Temperature: ");
-  client.print(temperature);
-  client.println("</h2>");
-
-  client.print("<h2>Humidity: ");
-  client.print(humidity);
-  client.println("</h2>");
-
-
-  // client.print("Led is now: ");
-
-  // if(value == HIGH) {
-  //   client.print("On");
-  // } else {
-  //   client.print("Off");
-  // }
-  // client.println("<br><br>");
-  // client.println("<a href=\"/LED=ON\"\"><button>On </button></a>");
-  // client.println("<a href=\"/LED=OFF\"\"><button>Off </button></a><br />");
-
-  client.println("</html>");
-  delay(500);
-
-  Serial.println("Client disonnected");
-  Serial.println("");
+  WiFiClient client = server.available();
+  if (!client) return;
+  
+  handleClient(client);
 }
