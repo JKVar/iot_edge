@@ -14,7 +14,6 @@ byte temperature = 0;
 byte humidity = 0;
 
 byte resentData = 0;
-bool isDataError = false;
 
 SPISettings spi_settings(100000, MSBFIRST, SPI_MODE0);
 
@@ -132,7 +131,6 @@ void setBooleans() {
 }
 
 void executePolling() {
-  isDataError = false;
   SPI.beginTransaction(spi_settings);
   
   poll('b', &flags);
@@ -143,10 +141,8 @@ void executePolling() {
 
   SPI.endTransaction();
 
-  if (!isDataError) {
-    setLuminosity();
-    setBooleans();
-  }
+  setLuminosity();
+  setBooleans();
 }
 
 void mainPageScripts(WiFiClient &client) {
