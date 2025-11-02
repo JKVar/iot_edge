@@ -1,10 +1,6 @@
 #include <ESP8266WiFi.h>
 #include <SPI.h>
 
-const uint8_t COMMAND_QUEUE_MAX_SIZE = 128;
-byte commandQueue[128];
-uint8_t currentQueueSize = 0;
-
 bool isManual = false;
 bool isDay = false;
 bool isShutterUp = false;
@@ -118,7 +114,8 @@ void poll(byte command, byte *data) {
 
   Serial.print(F("SPI command failed after "));
   Serial.print(MAX_SPI_RETRIES);
-  Serial.print(F(" attempts."));
+  Serial.println(F(" attempts."));
+  Serial.println();
 
   *data = 0xFF;
 }
@@ -152,10 +149,6 @@ void executePolling() {
   }
 }
 
-void executeQueuedCommands() {
-
-}
-
 void mainPageScripts(WiFiClient &client) {
   client.println(F("<script>"));
   client.println(F("function updateData() {"));
@@ -174,7 +167,7 @@ void mainPageScripts(WiFiClient &client) {
   client.println(F("        console.log(\"Failed to fetch data: \", error);"));
   client.println(F("    })"));
   client.println(F("    .finally(() => {"));
-  client.println(F("        setTimeout(updateData, 2000);"));
+  client.println(F("        setTimeout(updateData, 3000);"));
   client.println(F("    });"));
   client.println(F("}"));
   client.println(F("updateData();"));
@@ -183,6 +176,7 @@ void mainPageScripts(WiFiClient &client) {
 
 void mainPageBody(WiFiClient &client) {
   client.println(F("<body>"));
+  
   client.println(F("<h3>Sensor data:</h3>"));
   client.println(F("<p>Temperature: <span id='temp'>--</span>°C</p>"));
   client.println(F("<p>Humidity: <span id='hum'>--</span>%</p>"));
@@ -284,8 +278,6 @@ void pollSPI() {
     last_SPI_poll = millis();
     executePolling();
   }
-  
-  executeQueuedCommands();
 }
 
 void handleClient(WiFiClient &client) {

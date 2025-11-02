@@ -273,8 +273,6 @@ void printBrightness() {
     Serial.print(F("Lum: "));
     Serial.print(luminosity);
     Serial.print(F(" ("));
-    // Serial.print((highByte(luminosity) << 8) + lowByte(luminosity));
-    // Serial.print(F(") ("));
     
     if (brightness <= 0) {
       Serial.print(F("Bright"));
@@ -387,55 +385,38 @@ ISR(SPI_STC_vect) {
   byte c = SPDR;
 
   if (!commandModeSet) {
-    commandMode = true;   // default
-    SPDR = 0xFF;
-    
-    if (c == '?') {
-      commandMode = false;
-    }
-      
+    commandMode = (c == '?' ? false : true);    // defaults to true
     commandModeSet = true;
+    SPDR = 0xFF;
   } else {
-    if (commandMode) {
-      sendData(c);
-    } else {
-      verifyData(c);
-    }
-
     commandModeSet = false;
-  }
-}
+    if (commandMode) {
+      byte sensorData = 0x00;
+      switch (c) {
+        case 'b': sensorData = flags; break;
+        case 'f': {
+          sensorData = (highLumByte ? highByte(luminosity) : lowByte(luminosity));
+          highLumByte = !highLumByte;
+          break;
+        }
+        case 'h': sensorData = temperature; break;
+        case 'e': sensorData = humidity; break;
+        default: return;
+      }
 
-byte getLuminosityByte(bool highLumByte) {
-  return highLumByte ? highByte(luminosity) : lowByte(luminosity);
-}
-
-void sendData(byte c) {
-  switch (c) {
-    case 'b': SPDR = flags; break;
-    case 'f': {
-      SPDR = getLuminosityByte(highLumByte);
-      highLumByte = !highLumByte;
-      break;
-    }
-    case 'h': SPDR = temperature; break;
-    case 'e': SPDR = humidity; break;
-    case 'm': forceShutters(); break;
-    default: return;
-  }
-
-  lastSentData = SPDR;
-  lastCommandByte = c;
-}
-
-void verifyData(byte c) {
-  if (c != lastSentData) {
-    if (lastCommandByte == 'f') {
-      SPDR = getLuminosityByte(!highLumByte);
+      SPDR = sensorData;
+      lastSentData = sensorData;
+      lastCommandByte = c;
     } else {
-      sendData(lastCommandByte);
+      if (c != lastSentData) {
+        if (lastCommandByte == 'f') {
+          SPDR = (!highLumByte ? highByte(luminosity) : lowByte(luminosity));
+        } else {
+          SPDR = lastSentData;
+        }
+      } else {
+        SPDR = c;
+      }
     }
-  } else {
-    SPDR = c;
   }
 }
