@@ -145,6 +145,13 @@ void executePolling() {
   setBooleans();
 }
 
+void mainPageStyles(WiFiClient &client) {
+  client.println(F("<style>"));
+  client.println(F("  body {background-color: black;}"));
+  client.println(F("  h3, p {color: white;}"));
+  client.println(F("</style>"));
+}
+
 void mainPageScripts(WiFiClient &client) {
   client.println(F("<script>"));
   client.println(F("function updateData() {"));
@@ -191,6 +198,9 @@ void mainPageHead(WiFiClient &client) {
   client.println(F("<head>"));
   client.println(F("<title>Sensor Page</title>"));
   client.println(F("<meta charset=\"UTF-8\">"));
+
+  mainPageStyles(client);     // Kisüti a fehér weboldal a szemem
+
   client.println(F("</head>"));
 }
 
