@@ -1,6 +1,31 @@
 #include <ESP8266WiFi.h>
 #include <SPI.h>
 
+const uint8_t COMMAND_QUEUE_MAX_SIZE = 16;
+uint8_t commandQueue[COMMAND_QUEUE_MAX_SIZE];
+uint8_t currentQueueSize = 0;
+
+bool queueCommand(byte command) {
+  uint8_t next = currentQueueSize + 1;
+  if (next < COMMAND_QUEUE_MAX_SIZE) {
+    commandQueue[next] = command;
+    currentQueueSize++;
+    return true;
+  }
+  return false;
+}
+
+bool dequeueCommand(byte *command) {
+  if (currentQueueSize <= 0) {
+    return false;
+  }
+  *command = commandQueue[currentQueueSize];
+  currentQueueSize--;
+  return true;
+}
+
+bool isStateSynced = false;
+
 bool isManual = false;
 bool isDay = false;
 bool isShutterUp = false;
@@ -17,11 +42,11 @@ byte resentData = 0;
 
 SPISettings spi_settings(100000, MSBFIRST, SPI_MODE0);
 
-const char* ssid = "-";
-const char* password = "-";
+const char* ssid = "UBB WIFI";
+const char* password = "computer";
 
 const byte MAX_SPI_RETRIES = 3;
-const int SPI_POLL_INTERVAL = 1500;
+const int SPI_POLL_INTERVAL = 1000;
 const int CLIENT_AVAILABILITY_TIMEOUT = 2000;
 unsigned long last_SPI_poll = 0;
 
@@ -43,7 +68,8 @@ void setup() {
   Serial.print("Connecting to ");
   Serial.println(ssid);
 
-  WiFi.begin(ssid, password);
+  // WiFi.begin(ssid, password);
+  WiFi.begin(ssid);
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -83,6 +109,7 @@ bool attemptPolling(byte command, byte *data) {
   sync = SPI.transfer(receivedData);
   if (sync != 0xFF) return false;
 
+  // Read the resent data and verify if it's equal to the first received data.
   byte resentData = SPI.transfer('!');
   if (resentData != receivedData) return false;
 
@@ -95,7 +122,7 @@ bool attemptPolling(byte command, byte *data) {
 }
 
 void poll(byte command, byte *data) {
-  for (byte attempt = 0; attempt < MAX_SPI_RETRIES; ++attempt) {
+  for (byte attempt = 1; attempt <= MAX_SPI_RETRIES; ++attempt) {
     if (attemptPolling(command, data)) {
       return;
     }
@@ -143,6 +170,30 @@ void executePolling() {
 
   setLuminosity();
   setBooleans();
+  resyncState();
+}
+
+void executeCommandQueue() {
+  if (currentQueueSize > 0) {
+    offsyncState();
+    SPI.beginTransaction(spi_settings);
+    byte nextCommand, dummy;
+
+    while(currentQueueSize) {
+      dequeueCommand(&nextCommand);
+      poll(nextCommand, &dummy);
+    }
+
+    SPI.endTransaction();
+  }
+}
+
+void offsyncState() {
+  isStateSynced = false;
+}
+
+void resyncState() {
+  isStateSynced = true;
 }
 
 void mainPageStyles(WiFiClient &client) {
@@ -165,15 +216,37 @@ void mainPageScripts(WiFiClient &client) {
   client.println(F("        document.getElementById('sysmode').textContent = data.manual ? \"MANUAL\" : \"AUTOMATIC\";"));
   client.println(F("        document.getElementById('shutterstate').textContent = data.shutter ? \"UP\" : \"DOWN\";"));
   client.println(F("        document.getElementById('enginestate').textContent = data.engine ? \"ON\" : \"OFF\";"));
+  client.println();
+  client.println(F("        const btn = document.getElementById('shutterButton');"));
+  client.println(F("        const shouldToggle = data.synced === 1 && data.engine === 0;"));
+  client.println();
+  client.println(F("        btn.textContent = data.shutter ? \"LOWER Shutters\" : \"RAISE Shutters\""));
+  client.println(F("        btn.disabled = !shouldToggle;"));
   client.println(F("    })"));
   client.println(F("    .catch(error => {"));
   client.println(F("        console.log(\"Failed to fetch data: \", error);"));
   client.println(F("    })"));
   client.println(F("    .finally(() => {"));
-  client.println(F("        setTimeout(updateData, 3000);"));
+  client.println(F("        setTimeout(updateData, 2000);"));
   client.println(F("    });"));
   client.println(F("}"));
   client.println(F("updateData();"));
+  client.println();
+  client.println(F("function shutterButton() {"));
+  client.println(F("  var btn = document.getElementById('shutterButton');"));
+  client.println(F("  btn.disabled = true;"));
+  client.println();
+  client.println(F("  fetch('/shutters', { method: \"POST\" })"));
+  client.println(F("    .then(response => {"));
+  client.println(F("        if (!response.ok) {"));
+  client.println(F("            btn.disabled = false;"));
+  client.println(F("        }"));
+  client.println(F("    })"));
+  client.println(F("    .catch(error => {"));
+  client.println(F("        btn.disabled = false;"));
+  client.println(F("        console.log(\"Failed to request shutter change: \", error);"));
+  client.println(F("    });"));
+  client.println(F("}"));
   client.println(F("</script>"));
 }
 
@@ -188,6 +261,8 @@ void mainPageBody(WiFiClient &client) {
   client.println(F("<p>-- System mode: <span id='sysmode'>--</span></p>"));
   client.println(F("<p>-- Shutter: <span id='shutterstate'>--</span></p>"));
   client.println(F("<p>-- Engine: <span id='enginestate'>--</span></p>"));
+  client.println(F("<br>"));
+  client.println(F("<a><button id='shutterButton' onclick=\"shutterButton()\">-- Shutters</button></a>"));
 
   mainPageScripts(client);
 
@@ -235,6 +310,8 @@ String createDataJson() {
   json += isShutterUp;
   json += ",\"engine\":";
   json += isEngineOn;
+  json += ",\"synced\":";
+  json += isStateSynced;
   json += "}";
 
   return json;
@@ -255,9 +332,24 @@ void dataRequestResponse(WiFiClient &client) {
   client.flush();
 }
 
+void shutterButtonResponse(WiFiClient &client) {
+  byte commandToQueue = isShutterUp ? 'd' : 'u';
+  queueCommand(commandToQueue);
+
+  client.println(F("HTTP/1.1 200 OK"));
+  client.println(F("Connection: close"));
+  client.println(F("Access-Control-Allow-Origin: *"));
+  client.println();
+  client.flush();
+}
+
 void webClientResponse(WiFiClient &client, String request) {
-  if (request.indexOf("/data") != -1) {
+  if (request.startsWith("GET") && request.indexOf("/data") != -1) {
     dataRequestResponse(client);
+    return;
+  }
+  if (request.startsWith("POST") && request.indexOf("/shutters") != -1) {
+    shutterButtonResponse(client);
     return;
   }
 
@@ -284,6 +376,8 @@ void pollSPI() {
     last_SPI_poll = millis();
     executePolling();
   }
+
+  executeCommandQueue();
 }
 
 void handleClient(WiFiClient &client) {

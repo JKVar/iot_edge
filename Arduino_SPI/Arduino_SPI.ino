@@ -17,10 +17,24 @@
 #define printByte(args) print(args, BYTE);
 #endif
 
+#define CONSTRUCT_FLAG_BYTE(manual, day, shutter, engine) \
+( ((manual) ? 0x01 : 0x00) | \
+  ((day) ? 0x02 : 0x00) | \
+  ((shutter) ? 0x04 : 0x00) | \
+  ((engine) > 0 ? 0x08 : 0x00) )
+
+const unsigned long LOOP_INTERVAL = 1000;
+unsigned long lastLoopTime = 0;
+
 const uint8_t STEPS_PER_REVOLUTION = 200;
-const uint8_t TO_AUTOMATIC_TIMER_S = 10;
+const uint8_t TO_AUTOMATIC_TIMER_S = 60;
 const uint8_t NORMAL_BRIGHTNESS_THRESHOLD = 100;
 const uint8_t TOO_BRIGHT_THRESHOLD = 1000;
+
+DateTime now;
+const DateTime DEFAULT_DATE = DateTime(2000, 1, 1, 0, 0, 0);
+const byte DEFAULT_HUMIDITY = 0;
+const byte DEFAULT_TEMPERATURE = 20;
 
 Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
 
@@ -46,6 +60,9 @@ volatile bool isManual = false;
 volatile bool isDay = false;
 volatile bool isShutterUp = true;
 
+volatile bool scheduleShutterMovement = false;
+volatile bool shutterNewState = false;
+
 volatile int engineState = -1;  // <= 0 - off; >=1 - on
 
 /*
@@ -59,7 +76,7 @@ volatile byte flags = 0b00000000;
 
 // Luminosity needs a more sophisticated way to send over
 volatile uint16_t luminosity = 0;
-volatile bool highLumByte = false;
+volatile bool highDataByte = false;
 
 volatile byte temperature = 0;
 volatile byte humidity = 0;
@@ -89,32 +106,39 @@ bool checkSensors() {
   return allGood;
 }
 
-void assessBrightness(float light) {
-  luminosity = (uint32_t)light;
-  if (light) {
-    if (light < NORMAL_BRIGHTNESS_THRESHOLD) {
-      brightness = 2;
-    } else if (light < TOO_BRIGHT_THRESHOLD) {
-      brightness = 1;
-    } else {
-      brightness = 0;
+void assessBrightness() {
+  if (!missingTSL) {
+    sensors_event_t event;
+    tsl.getEvent(&event);
+
+    if (event.light) {
+      luminosity = (uint32_t)event.light;
+      if (event.light) {
+        if (event.light < NORMAL_BRIGHTNESS_THRESHOLD) {
+          brightness = 2;
+        } else if (event.light < TOO_BRIGHT_THRESHOLD) {
+          brightness = 1;
+        } else {
+          brightness = 0;
+        }
+      }
     }
   }
 }
 
-void forceShutters() {
-  changeShutters(!isShutterUp);
+void forceShutters(bool state) {
+  changeShutters(state);
   isManual = true;
 }
 
 void assessButtonState(uint32_t unixtime) {
   buttonState = digitalRead(A0);
 
-  if (buttonState != buttonOldState) {
+  if (!engineState && buttonState != buttonOldState) {
     buttonOldState = buttonState;
     lastButtonChangeTimestamp = unixtime;
 
-    forceShutters();
+    forceShutters(!isShutterUp);
   }
 }
 
@@ -150,6 +174,14 @@ void checkEngineState() {
   }
 }
 
+void checkShutterSchedule(uint32_t unixtime) {
+  if (scheduleShutterMovement) {
+    scheduleShutterMovement = false;
+    lastButtonChangeTimestamp = unixtime;
+    forceShutters(shutterNewState);
+  }
+}
+
 void automaticModeLogic(uint32_t unixtime) {
   if (!isManual) {
     if (isDay) {
@@ -167,13 +199,6 @@ void automaticModeLogic(uint32_t unixtime) {
   } else {
     canSwitchMode(unixtime);
   }
-}
-
-void constructFlagByte() {
-  bitWrite(flags, 0, isManual ? 1 : 0);
-  bitWrite(flags, 1, isDay ? 1 : 0);
-  bitWrite(flags, 2, isShutterUp ? 1 : 0);
-  bitWrite(flags, 3, engineState > 0 ? 1 : 0);
 }
 
 void configureTSL() {
@@ -343,33 +368,9 @@ void printSensorProblems() {
   }
 }
 
-
-void loop() {
-  // // DHT11 sampling rate is 1HZ.
-  delay(1000);
-  bool allGood = checkSensors();
+void timegatedLoopLogic() {
+  checkSensors();
   
-  DateTime now = !missingRTC ? rtc.now() : DateTime(2000, 1, 1, 0, 0, 0);
-  delay(50);
-
-  if (!missingTSL) {
-    sensors_event_t event;
-    tsl.getEvent(&event);
-    delay(50);
-    if (event.light) {
-      assessBrightness(event.light);
-    }
-  }
-
-  humidity = !missingDHT ? dht.readHumidity() : 0;
-  temperature = !missingDHT ? dht.readTemperature() : 20;
-
-  checkDayTime(now.hour());
-  automaticModeLogic(now.unixtime());
-  assessButtonState(now.unixtime());
-  checkEngineState();
-  constructFlagByte();
-
   printDateTime(now.year(), now.month(), now.day(), now.hour(), now.minute());
   printHumidityAndTemperature(humidity, temperature);
   printMode();
@@ -378,6 +379,30 @@ void loop() {
   printEngineState();
 
   Serial.println();
+}
+
+void unrestrictedLoopLogic() {
+  now = !missingRTC ? rtc.now() : DEFAULT_DATE;
+  humidity = !missingDHT ? dht.readHumidity() : DEFAULT_HUMIDITY;
+  temperature = !missingDHT ? dht.readTemperature() : DEFAULT_TEMPERATURE;
+  assessBrightness();
+
+  checkDayTime(now.hour());
+  automaticModeLogic(now.unixtime());
+  assessButtonState(now.unixtime());
+  checkEngineState();
+
+  flags = CONSTRUCT_FLAG_BYTE(isManual, isDay, isShutterUp, engineState);
+}
+
+void loop() {
+  unsigned long timeMillis = millis();
+  unrestrictedLoopLogic();
+
+  if (timeMillis - lastLoopTime >= LOOP_INTERVAL) {
+    lastLoopTime = timeMillis;
+    timegatedLoopLogic();
+  }
 }
 
 // SPI interrupt routine
@@ -393,15 +418,28 @@ ISR(SPI_STC_vect) {
     if (commandMode) {
       byte sensorData = 0x00;
       switch (c) {
-        case 'b': sensorData = flags; break;
+        case 'b': {
+          sensorData = flags;
+          break;
+        }
         case 'f': {
-          sensorData = (highLumByte ? highByte(luminosity) : lowByte(luminosity));
-          highLumByte = !highLumByte;
+          sensorData = (highDataByte ? highByte(luminosity) : lowByte(luminosity));
+          highDataByte = !highDataByte;
           break;
         }
         case 'h': sensorData = temperature; break;
         case 'e': sensorData = humidity; break;
-        default: return;
+        case 'u': {
+          scheduleShutterMovement = true;
+          shutterNewState = true;
+          break;
+        }
+        case 'd': {
+          scheduleShutterMovement = true;
+          shutterNewState = false;
+          break;
+        }
+        default: break;
       }
 
       SPDR = sensorData;
@@ -409,10 +447,9 @@ ISR(SPI_STC_vect) {
       lastCommandByte = c;
     } else {
       if (c != lastSentData) {
-        if (lastCommandByte == 'f') {
-          SPDR = (!highLumByte ? highByte(luminosity) : lowByte(luminosity));
-        } else {
-          SPDR = lastSentData;
+        switch (lastCommandByte) {
+          case 'f': SPDR = (!highDataByte ? highByte(luminosity) : lowByte(luminosity)); break;
+          default: SPDR = lastSentData;
         }
       } else {
         SPDR = c;
