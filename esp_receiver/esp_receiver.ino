@@ -38,6 +38,7 @@ void setup() {
 void loop() {
   if (SerialBT.available()) {
     String data = SerialBT.readStringUntil('\n');
+    // Serial.println(data);
     if (data[0] == 'T') {
       Serial.print("Temperature: ");
     }
@@ -49,8 +50,13 @@ void loop() {
     if (data[0] == 'L') {
       Serial.print("Luminosity: ");
     }
+
+    if (data[0] == 'D') {
+      Serial.print("Date: ");
+    }
+
     Serial.print(data.substring(1));
-    Serial.println();
+    Serial.println("\n");
   }
 
   delay(900);

@@ -1,5 +1,6 @@
 #include "BluetoothSerial.h"
 #include "DHT.h"
+#include "RTClib.h"
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_TSL2561_U.h>
@@ -10,7 +11,10 @@
 Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
 BluetoothSerial SerialBT;
 DHT dht(DHTPIN, DHTTYPE);
+RTC_DS3231 rtc;
 
+bool missingDHT = false;
+bool missingRTC = false;
 bool missingTSL = false;
 
 void configureTSL() {
@@ -20,6 +24,16 @@ void configureTSL() {
   } else {
     missingTSL = true;
     Serial.print(F("Failed to start TSL."));
+  }
+}
+
+void configureRTC() {
+  if (rtc.begin()) {
+    // Comment this out after first run.
+     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  } else {
+    missingRTC = true;
+    Serial.print(F("Failed to start RTC."));
   }
 }
 
@@ -33,7 +47,48 @@ void setup() {
   Serial.println(SerialBT.getBtAddressString());
 
   configureTSL();
+  configureRTC();
   dht.begin();
+}
+
+void printWithZero(uint8_t number) {
+  if (number < 10) Serial.print("0");
+  Serial.print(number);
+}
+
+void printWithZeroBT(uint8_t number) {
+  if (number < 10) SerialBT.print("0");
+  SerialBT.print(number);
+}
+
+void printDate(uint16_t year, uint8_t month, uint8_t day) {
+  Serial.print(year);
+  Serial.print("/");
+  printWithZero(month);
+  Serial.print("/");
+  printWithZero(day);
+  Serial.print(" ");
+}
+
+void printDayOrNight(uint8_t hour, uint8_t minute) {
+  printWithZero(hour);
+  Serial.print(":");
+  printWithZero(minute);
+  Serial.println(" ");
+}
+
+void sendDateTime(DateTime now) {
+  SerialBT.print("D");
+  SerialBT.print(now.year());
+  SerialBT.print("/");
+  printWithZeroBT(now.month());
+  SerialBT.print("/");
+  printWithZeroBT(now.day());
+  SerialBT.print(" ");
+  printWithZeroBT(now.hour());
+  SerialBT.print(":");
+  printWithZeroBT(now.minute());
+  SerialBT.println();
 }
 
 void loop() {
@@ -75,6 +130,12 @@ void loop() {
   } else {
     SerialBT.println("ETSL2561 error");
   }
+
+  DateTime now = !missingRTC ? rtc.now() : DateTime(2000, 1, 1, 0, 0, 0);
+  delay(50);
+  printDate(now.year(), now.month(), now.day());
+  printDayOrNight(now.hour(), now.minute());
+  sendDateTime(now);
 
   delay(3000);
 }
