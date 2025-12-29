@@ -138,4 +138,5 @@ void loop() {
   sendDateTime(now);
 
   delay(3000);
+  SerialBT.println("U"); // update signal
 }
