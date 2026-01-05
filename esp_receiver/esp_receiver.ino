@@ -31,37 +31,43 @@ void configureLCD() {
   lcd.home();
 }
 
+void flushScreen() {
+  lcd.flush();
+  lcd.clear();
+  lcd.setCursor(0,0);
+  delay(50);
+}
+
+void printToLCD(String data) {
+  lcd.print(data);
+}
+
+void connectToBT() {
+  flushScreen();
+  Serial.println("Connecting...");
+  printToLCD("Connecting...");
+
+  while (!SerialBT.connect(address)) {
+    Serial.println("Retrying...");
+    flushScreen();
+    printToLCD("Retrying...");
+    delay(2000);
+  }
+
+  flushScreen();
+}
+
 void setup() {
   Serial.begin(115200);
-  // Wire.begin();
   Wire.begin(21, 22);
-
+  Wire.setClock(100000);
+  configureLCD();
 
   SerialBT.begin("ESP32_RECEIVER", true);
   delay(2000);
 
-  Serial.println("Connecting...");
-  while (!SerialBT.connect(address)) {
-    Serial.println("Retrying...");
-    delay(2000);
-  }
-
+  connectToBT();
   Serial.println("Connected to server!");
-
-  configureLCD();
-}
-
-void flushScreen() {
-  lcd.flush();
-  lcd.setCursor(0,0);
-  lcd.clear();
-  //   delay(1000);
-  // lcd.print('h');
-  delay(50);
-}
-
-void printToLcd(String data) {
-  lcd.print(data);
 }
 
 void loop() {
@@ -69,15 +75,13 @@ void loop() {
     String data = SerialBT.readStringUntil('\n');
     String lcdString, dataText;
     if (data[0] == 'U') {
-      Serial.println("\n");
       delay(3000);
       flushScreen();
     }
-    // Serial.println(data);
+
     if (data[0] == 'T') {
       Serial.print("Temperature: ");
       lcd.setCursor(0, 0);
-      // lcd.print("Temp: ");
       dataText = "Temp: ";
     }
 
@@ -96,14 +100,24 @@ void loop() {
     if (data[0] == 'D') {
       Serial.print("Date: ");
       lcd.setCursor(0, 3);
-      // lcd.print("Date: ");
       dataText = "";
     }
 
-    // lcd.println(data.substring(1));
-    printToLcd(dataText + data.substring(1));
+    if (data[0] == 'E') {
+      lcd.setCursor(0, 0);
+      dataText = "";
+      if (data[1] == 'T') { 
+        lcd.setCursor(0,2); 
+      }
+    }
+
+    printToLCD(dataText + data.substring(1));
     Serial.println(data.substring(1));
+  } else {
+    flushScreen();
+    printToLCD("Disconnected");
+    delay(1000);
+    connectToBT();
   }
 
-  // delay(900);
 }

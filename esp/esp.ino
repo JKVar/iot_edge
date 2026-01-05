@@ -7,6 +7,7 @@
 
 #define DHTPIN 2
 #define DHTTYPE DHT11
+#define UINT16_MAX 65536
 
 Adafruit_TSL2561_Unified tsl = Adafruit_TSL2561_Unified(TSL2561_ADDR_FLOAT, 12345);
 BluetoothSerial SerialBT;
@@ -108,6 +109,10 @@ void loop() {
     Serial.print("\nTemperature: ");
     Serial.print(temperature);
     Serial.println(" °C");
+
+    Serial.print("\nHumidity: ");
+    Serial.print(humidity);
+    Serial.println(" %");
   } else {
     SerialBT.println("EDHT error");
     Serial.print("DHT error");
@@ -124,9 +129,14 @@ void loop() {
     SerialBT.print(event.light);
     SerialBT.println();
 
-    Serial.print("Luminosity: ");
-    Serial.print(event.light);
-    Serial.println();
+    if (event.light < UINT16_MAX) {
+      Serial.print("Luminosity: ");
+      Serial.print(event.light);
+      Serial.println();
+    } else {
+      SerialBT.println("ETSL2561 error");
+      Serial.println("TSL2561 error");
+    }
   } else {
     SerialBT.println("ETSL2561 error");
   }
