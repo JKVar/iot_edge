@@ -4,10 +4,10 @@
 constexpr int MAX_TOKENS = 4;
 constexpr int MAX_INPUT_SIZE = 32;
 
-const char* ssid = "";
-const char* password = "";
+const char* ssid = "Mateinfo";
+const char* password = "computer";
 
-const char* mqtt_server = "192.168.1.100";
+const char* mqtt_server = "192.168.39.54";
 const char* topics[] = {
   "esp32/math/add",
   "esp32/math/subtract",
@@ -43,7 +43,7 @@ void setup() {
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
   while (!client.connected()) {
-    if (client.connect("ESP32_Publisher")) {
+    if (client.connect("ESP32_Subscriber")) {
       Serial.println(F("Connected to MQTT broker."));
     } else {
       Serial.println(F("MQTT connection failed. Retrying in 1s."));
@@ -81,7 +81,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   if (strcmp(tokens[0], "add") == 0) {
     Serial.print(F("add "));
     Serial.print(y);
-    Serial.print(F("to "));
+    Serial.print(F(" to "));
     Serial.print(x);
     Serial.print(F(". Result: "));
     Serial.println(x + y);
@@ -89,7 +89,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   } else if (strcmp(tokens[0], "subtract") == 0) {
     Serial.print(F("subtract "));
     Serial.print(y);
-    Serial.print(F("from "));
+    Serial.print(F(" from "));
     Serial.print(x);
     Serial.print(F(". Result: "));
     Serial.println(x - y);
@@ -97,7 +97,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   } else if (strcmp(tokens[0], "multiply") == 0) {
     Serial.print(F("multiply "));
     Serial.print(x);
-    Serial.print(F("by "));
+    Serial.print(F(" by "));
     Serial.print(y);
     Serial.print(F(". Result: "));
     Serial.println(x * y);
@@ -105,7 +105,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   } else if (strcmp(tokens[0], "divide") == 0) {
     Serial.print(F("divide "));
     Serial.print(x);
-    Serial.print(F("by "));
+    Serial.print(F(" by "));
     Serial.print(y);
     Serial.print(F(". Result: "));
     

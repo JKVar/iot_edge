@@ -1,10 +1,10 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-const char* ssid = "";
-const char* password = "";
+const char* ssid = "Mateinfo";
+const char* password = "computer";
 
-const char* mqtt_server = "192.168.1.100";
+const char* mqtt_server = "192.168.39.54";
 const char* topics[] = {
   "esp32/math/add",
   "esp32/math/subtract",
@@ -17,8 +17,8 @@ PubSubClient client(wifi);
 
 String serialBuffer = "";
 
-void processSerialInput(const String &input);
-short getTopicIndex(const String &input);
+void processSerialInput(const String& input);
+short getTopicIndex(const String& input);
 
 void setup() {
   Serial.begin(115200);
@@ -61,22 +61,31 @@ void loop() {
   }
 }
 
-void processSerialInput(const String &input) {
+void processSerialInput(const String& input) {
   short index = getTopicIndex(input);
   if (index >= 0 && index < (sizeof(topics) / sizeof(topics[0]))) {
-    client.publish(topics[index], input.c_str());
+    bool isPublished = client.publish(topics[index], input.c_str());
 
-    Serial.print(F("Published to [\""));
-    Serial.print(topics[index]);
-    Serial.print(F("\"]:"));
-    Serial.println(input);
+    if (isPublished) {
+      Serial.print(F("Published to [\""));
+      Serial.print(topics[index]);
+      Serial.print(F("\"]:"));
+      Serial.println(input);
+    } else {
+      Serial.print(client.connected());
+      Serial.print("Input not published to[\"");
+      Serial.print(topics[index]);
+      Serial.print(F("\"]:"));
+      Serial.println(input);
+    }
+
   } else {
     Serial.print(F("Invalid topic for input: "));
     Serial.println(input);
   }
 }
 
-short getTopicIndex(const String &input) {
+short getTopicIndex(const String& input) {
   // Example input "add 2 3" -> index = 0
   if (input.startsWith("add")) return 0;
   if (input.startsWith("subtract")) return 1;
