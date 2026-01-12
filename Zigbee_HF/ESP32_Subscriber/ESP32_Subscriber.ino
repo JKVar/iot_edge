@@ -1,8 +1,8 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-constexpr int MAX_TOKENS = 4;
-constexpr int MAX_INPUT_SIZE = 32;
+constexpr int MAX_TOKENS = 3;
+constexpr int MAX_INPUT_SIZE = 64;
 
 const char* ssid = "";
 const char* password = "";
@@ -20,15 +20,12 @@ PubSubClient client(wifi);
 
 char message[MAX_INPUT_SIZE + 1];
 
-// Function prototype definitions
 void callback(char* topic, byte* payload, unsigned int length);
 
 int split(char* input, char* tokens[]);
-
 bool isKeyword(const char* input);
 bool isNumber(const char* input);
 
-// Core program
 void setup() {
   Serial.begin(115200);
   Serial.print(F("Initializing..."));
@@ -43,7 +40,7 @@ void setup() {
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
   while (!client.connected()) {
-    if (client.connect("ESP32_Publisher")) {
+    if (client.connect("ESP32_Subscriber")) {
       Serial.println(F("Connected to MQTT broker."));
     } else {
       Serial.println(F("MQTT connection failed. Retrying in 1s."));
@@ -64,7 +61,14 @@ void loop() {
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  if (length >= MAX_INPUT_SIZE) return;
+  if (length >= MAX_INPUT_SIZE) {
+    Serial.print(F("Request exceeding "));
+    Serial.print(MAX_INPUT_SIZE);
+    Serial.print(F(" length received. (Length: "));
+    Serial.print(length);
+    Serial.println(F(".) Aborted."));
+    return;
+  }
 
   memcpy(message, payload, length);
   message[length] = '\0';
@@ -73,12 +77,23 @@ void callback(char* topic, byte* payload, unsigned int length) {
   if (split(message, tokens) != 3 
       || !isKeyword(tokens[0]) 
       || !isNumber(tokens[1]) 
-      || !isNumber(tokens[2])) return;
+      || !isNumber(tokens[2])) {
+    Serial.print(F("Request of invalid format \""));
+
+    short len = sizeof(tokens) / sizeof(tokens[0]);
+    for (short i = 0; i < len; i++) {
+      Serial.print(tokens[i]);
+      Serial.print(F(" "));
+    }
+
+    Serial.println(F("\" received. Aborted."));
+    return;
+  }
 
   float x = atof(tokens[1]), y = atof(tokens[2]);
 
-  Serial.print(F("Received request to "));
-  if (strcmp(tokens[0], "add") == 0) {
+  Serial.print(F("Request received to "));
+  if (strcmp(topic, topics[0]) == 0 && strcmp(tokens[0], "add") == 0) {
     Serial.print(F("add "));
     Serial.print(y);
     Serial.print(F("to "));
@@ -86,7 +101,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     Serial.print(F(". Result: "));
     Serial.println(x + y);
 
-  } else if (strcmp(tokens[0], "subtract") == 0) {
+  } else if (strcmp(topic, topics[1]) == 0 && strcmp(tokens[0], "subtract") == 0) {
     Serial.print(F("subtract "));
     Serial.print(y);
     Serial.print(F("from "));
@@ -94,7 +109,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     Serial.print(F(". Result: "));
     Serial.println(x - y);
 
-  } else if (strcmp(tokens[0], "multiply") == 0) {
+  } else if (strcmp(topic, topics[2]) == 0 && strcmp(tokens[0], "multiply") == 0) {
     Serial.print(F("multiply "));
     Serial.print(x);
     Serial.print(F("by "));
@@ -102,7 +117,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     Serial.print(F(". Result: "));
     Serial.println(x * y);
 
-  } else if (strcmp(tokens[0], "divide") == 0) {
+  } else if (strcmp(topic, topics[3]) == 0 && strcmp(tokens[0], "divide") == 0) {
     Serial.print(F("divide "));
     Serial.print(x);
     Serial.print(F("by "));
@@ -110,7 +125,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     Serial.print(F(". Result: "));
     
     if (fabs(y) < 1e-6) {
-      Serial.print(F("undefined"));
+      Serial.println(F("undefined"));
     } else {
       Serial.println(x / y);
     }
